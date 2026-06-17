@@ -4,15 +4,11 @@ Performance benchmarks for _Client — run manually, not collected by pytest.
     uv run python tests/bench_client.py
 """
 import asyncio
-import logging
 import statistics
 import time
 
 from setaur._client import _Client
 from setaur._types import SourceType
-
-# suppress drop warnings — bench_queue_overflow intentionally triggers them
-logging.disable(logging.WARNING)
 
 ROBOT_KEY = "rbt-benchtest01"
 TS        = 1_000_000_000
