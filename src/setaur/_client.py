@@ -119,13 +119,19 @@ class _Client:
         source_type: SourceType,
         timestamp_ns: int,
         data: dict,
-    ) -> None:
+    ) -> int:
         if source_id not in self._subjects:
             _validate_source_id(source_id)
             self._subjects[source_id] = f"sensors.{self._robot_key}.{source_id}"
 
         envelope = self._envelope.sensor(source_id, source_type, timestamp_ns, data)
-        item     = (self._subjects[source_id], cbor2.dumps(envelope))
+        try:
+            payload = cbor2.dumps(envelope)
+        except Exception as exc:
+            raise TypeError(
+                f"setaur: sensor data for '{source_id}' is not CBOR-serializable: {exc}"
+            ) from exc
+        item = (self._subjects[source_id], payload)
 
         def _enqueue():
             try:
@@ -134,6 +140,7 @@ class _Client:
                 log.warning("setaur: publish queue full, dropping message for %s", source_id)
 
         self._loop.call_soon_threadsafe(_enqueue)
+        return envelope['sequence_num']
 
     def event(
         self,
@@ -151,7 +158,7 @@ class _Client:
         parent_id: str | None = None,
         attrs: dict[str, Any] | None = None,
         data: Any = None,
-    ) -> None:
+    ) -> int:
         if source_id not in self._validated_ids:
             _validate_source_id(source_id)
             self._validated_ids.add(source_id)
@@ -164,7 +171,13 @@ class _Client:
             trace_id=trace_id, span_id=span_id,
             parent_id=parent_id, attrs=attrs, data=data,
         )
-        item = (subject, cbor2.dumps(envelope))
+        try:
+            payload = cbor2.dumps(envelope)
+        except Exception as exc:
+            raise TypeError(
+                f"setaur: event data for '{source_id}' is not CBOR-serializable: {exc}"
+            ) from exc
+        item = (subject, payload)
 
         def _enqueue():
             try:
@@ -173,6 +186,7 @@ class _Client:
                 log.warning("setaur: publish queue full, dropping event for %s", source_id)
 
         self._loop.call_soon_threadsafe(_enqueue)
+        return envelope['sequence_num']
 
     def close(self) -> None:
         self._loop.call_soon_threadsafe(self._q.put_nowait, None)
