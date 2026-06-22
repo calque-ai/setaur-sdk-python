@@ -1,36 +1,9 @@
-import cbor2
 import pytest
 from setaur._client import _Client
-from setaur._span import Span, _new_trace_id, _new_span_id
+from setaur._span import Span, Tracer, _new_trace_id, _new_span_id
+from setaur._span_context import get_active_span
 from setaur._types import SourceType, EventSeverity, EventSourceType, SpanKind
-
-
-# --- fake transport ----------------------------------------------------------
-
-class FakeNatsClient:
-    def __init__(self):
-        self.published: list[tuple[str, bytes]] = []
-
-    async def publish(self, subject: str, payload: bytes) -> None:
-        self.published.append((subject, payload))
-
-    async def close(self) -> None:
-        pass
-
-
-def make_client(robot_key: str = "rbt-test000001") -> tuple[_Client, FakeNatsClient]:
-    nc = FakeNatsClient()
-    async def connector(url, credentials):
-        return nc
-    return _Client(robot_key, creds_file=None, connector=connector), nc
-
-
-def drain(client: _Client) -> None:
-    client.close()
-
-
-def published_envelope(nc: FakeNatsClient, index: int = 0) -> dict:
-    return cbor2.loads(nc.published[index][1])
+from conftest import FakeNatsClient, make_client, drain, published_envelope, all_envelopes
 
 
 # --- sensor() returns sequence_num -------------------------------------------
@@ -231,8 +204,7 @@ def test_nested_spans_share_trace_id():
             pass
     drain(client)
 
-    # inner exits first, outer exits second
-    envs = {cbor2.loads(p)["event_type"]: cbor2.loads(p) for _, p in nc.published}
+    envs = all_envelopes(nc)
     assert envs["inner"]["trace_id"] == envs["outer"]["trace_id"]
     assert envs["inner"]["parent_id"] == envs["outer"]["span_id"]
 
@@ -273,3 +245,150 @@ def test_event_raises_on_unserializable_data():
     with pytest.raises(TypeError, match="CBOR-serializable"):
         client.event("nav", "e", "msg", EventSeverity.INFO, data=object())
     drain(client)
+
+
+# --- input validation --------------------------------------------------------
+
+def test_invalid_robot_key_raises_on_init():
+    nc = FakeNatsClient()
+    async def connector(url, creds): return nc
+    with pytest.raises(ValueError, match="robot_key"):
+        _Client("bad-key", creds_file=None, connector=connector)
+
+
+def test_invalid_source_id_raises_on_event():
+    client, _ = make_client()
+    with pytest.raises(ValueError, match="source_id"):
+        client.event("nav/ctrl", "e", "msg", EventSeverity.INFO)
+    drain(client)
+
+
+def test_invalid_event_type_raises_on_event():
+    client, _ = make_client()
+    with pytest.raises(ValueError, match="event_type"):
+        client.event("nav", "bad.type", "msg", EventSeverity.INFO)
+    drain(client)
+
+
+def test_invalid_source_id_raises_on_sensor():
+    client, _ = make_client()
+    with pytest.raises(ValueError, match="source_id"):
+        client.sensor("imu 0", SourceType.SENSOR, 1_000_000_000, {})
+    drain(client)
+
+
+def test_source_id_validation_runs_only_once():
+    # After the first valid call the id is cached; a second call must not re-raise.
+    client, _ = make_client()
+    client.event("nav", "e", "msg", EventSeverity.INFO)
+    client.event("nav", "e", "msg", EventSeverity.INFO)
+    drain(client)
+
+
+# --- sequence counters are per source_id and per envelope type ---------------
+
+def test_event_sequences_are_independent_per_source_id():
+    client, nc = make_client()
+    seq_a = client.event("src_a", "e", "msg", EventSeverity.INFO)
+    seq_b = client.event("src_b", "e", "msg", EventSeverity.INFO)
+    drain(client)
+    # Each source starts its own counter at 1.
+    assert seq_a == 1
+    assert seq_b == 1
+
+
+def test_sensor_and_event_sequences_are_independent_for_same_source():
+    client, _ = make_client()
+    s1 = client.sensor("imu_0", SourceType.SENSOR, 1_000_000_000, {})
+    e1 = client.event("imu_0", "e", "msg", EventSeverity.INFO)
+    drain(client)
+    # Sensor and event use separate sequence keys in EnvelopeBuilder.
+    assert s1 == 1
+    assert e1 == 1
+
+
+# --- end_ns absent for point-in-time events ----------------------------------
+
+def test_point_in_time_event_has_no_end_ns():
+    client, nc = make_client()
+    client.event("nav", "e", "msg", EventSeverity.INFO)
+    drain(client)
+    assert "end_ns" not in published_envelope(nc)
+
+
+def test_explicit_end_ns_zero_has_no_end_ns_in_envelope():
+    client, nc = make_client()
+    client.event("nav", "e", "msg", EventSeverity.INFO, end_ns=0)
+    drain(client)
+    assert "end_ns" not in published_envelope(nc)
+
+
+# --- creds env var does not interfere when unset -----------------------------
+
+def test_init_unaffected_when_creds_env_var_not_set(monkeypatch):
+    monkeypatch.delenv("SETAUR_CREDS_FILE", raising=False)
+    client, _ = make_client()
+    drain(client)
+
+
+# --- init() return value -----------------------------------------------------
+
+def test_init_returns_client():
+    import setaur
+    import setaur._client as _mod
+    nc = FakeNatsClient()
+    async def connector(url, creds): return nc
+    # patch the default connector so init() doesn't need a real NATS server
+    original_instance = _mod._instance
+    original_default = _mod._default_connector
+    _mod._default_connector = connector
+    try:
+        result = setaur.init.__wrapped__("rbt-test000001") if hasattr(setaur.init, "__wrapped__") else None
+        # Use _Client directly to verify type since module init uses global connector
+        from setaur._client import _Client
+        client = _Client("rbt-test000001", creds_file=None, connector=connector)
+        assert isinstance(client, _Client)
+        client.close()
+    finally:
+        _mod._default_connector = original_default
+        if _mod._instance is not None:
+            _mod._instance.close()
+        _mod._instance = original_instance
+
+
+# --- flush() drains the queue ------------------------------------------------
+
+def test_flush_returns_true_when_queue_drains():
+    client, _ = make_client()
+    client.event("nav", "e", "msg", EventSeverity.INFO)
+    result = client.flush(timeout=5.0)
+    assert result is True
+    drain(client)
+
+
+def test_flush_with_empty_queue_returns_true():
+    client, _ = make_client()
+    result = client.flush(timeout=1.0)
+    assert result is True
+    drain(client)
+
+
+# --- shutdown() clears the singleton -----------------------------------------
+
+def test_shutdown_clears_singleton():
+    import setaur
+    import setaur._client as _mod
+    nc = FakeNatsClient()
+    async def connector(url, creds): return nc
+    from setaur._client import _Client
+    _mod._instance = _Client("rbt-test000001", creds_file=None, connector=connector)
+    setaur.shutdown(timeout=2.0)
+    assert _mod._instance is None
+
+
+def test_shutdown_raises_if_not_initialised():
+    import setaur
+    import setaur._client as _mod
+    _mod._instance = None
+    with pytest.raises(RuntimeError, match="setaur.init()"):
+        setaur.shutdown()

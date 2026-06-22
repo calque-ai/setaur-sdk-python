@@ -1,3 +1,4 @@
+import threading
 from collections import defaultdict
 from typing import Any
 from ._types import SourceType, EventSourceType, EventSeverity, SpanKind
@@ -5,15 +6,18 @@ from ._types import SourceType, EventSourceType, EventSeverity, SpanKind
 class EnvelopeBuilder:
     def __init__(self):
         self._seq: defaultdict[str, int] = defaultdict(int)
+        self._lock = threading.Lock()
 
     def sensor(self, source_id: str, source_type: SourceType, timestamp_ns: int, data: dict) -> dict:
         key = f"sensor:{source_id}"
-        self._seq[key] += 1
+        with self._lock:
+            self._seq[key] += 1
+            seq = self._seq[key]
         return {
             'timestamp_ns': timestamp_ns,
             'source_id':    source_id,
             'source_type':  str(source_type),
-            'sequence_num': self._seq[key],
+            'sequence_num': seq,
             'data':         data,
         }
 
@@ -35,7 +39,9 @@ class EnvelopeBuilder:
         data: Any = None,
     ) -> dict:
         key = f"event:{source_id}"
-        self._seq[key] += 1
+        with self._lock:
+            self._seq[key] += 1
+            seq = self._seq[key]
         envelope: dict[str, Any] = {
             'start_ns':     start_ns,
             'source_id':    source_id,
@@ -44,7 +50,7 @@ class EnvelopeBuilder:
             'severity':     str(severity),
             'message':      message,
             'kind':         str(kind),
-            'sequence_num': self._seq[key],
+            'sequence_num': seq,
         }
         if end_ns:
             envelope['end_ns'] = end_ns

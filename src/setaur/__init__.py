@@ -1,7 +1,7 @@
 from typing import Any
 from ._types import SourceType, EventSourceType, EventSeverity, SpanKind
-from ._client import init, get_client
-from ._span import Span
+from ._client import init, get_client, shutdown, flush
+from ._span import Span, Tracer, get_active_span
 
 
 def sensor(
@@ -92,10 +92,10 @@ def info(
     attrs: dict[str, Any] | None = None,
     data: Any = None,
 ) -> int:
-    """Publish an INFO-severity event. Shorthand for ``event(..., severity=EventSeverity.INFO)``.
+    """Publish an INFO-severity event.
 
-    Returns:
-        Sequence number for this source. See :func:`event` for full parameter docs.
+    Shorthand for ``event(..., severity=EventSeverity.INFO)``.
+    See :func:`event` for full parameter documentation.
     """
     return event(source_id, event_type, message, EventSeverity.INFO,
                  start_ns=start_ns, end_ns=end_ns, source_type=source_type, kind=kind,
@@ -118,10 +118,10 @@ def warning(
     attrs: dict[str, Any] | None = None,
     data: Any = None,
 ) -> int:
-    """Publish a WARNING-severity event. Shorthand for ``event(..., severity=EventSeverity.WARNING)``.
+    """Publish a WARNING-severity event.
 
-    Returns:
-        Sequence number for this source. See :func:`event` for full parameter docs.
+    Shorthand for ``event(..., severity=EventSeverity.WARNING)``.
+    See :func:`event` for full parameter documentation.
     """
     return event(source_id, event_type, message, EventSeverity.WARNING,
                  start_ns=start_ns, end_ns=end_ns, source_type=source_type, kind=kind,
@@ -144,10 +144,10 @@ def error(
     attrs: dict[str, Any] | None = None,
     data: Any = None,
 ) -> int:
-    """Publish an ERROR-severity event. Shorthand for ``event(..., severity=EventSeverity.ERROR)``.
+    """Publish an ERROR-severity event.
 
-    Returns:
-        Sequence number for this source. See :func:`event` for full parameter docs.
+    Shorthand for ``event(..., severity=EventSeverity.ERROR)``.
+    See :func:`event` for full parameter documentation.
     """
     return event(source_id, event_type, message, EventSeverity.ERROR,
                  start_ns=start_ns, end_ns=end_ns, source_type=source_type, kind=kind,
@@ -170,10 +170,10 @@ def critical(
     attrs: dict[str, Any] | None = None,
     data: Any = None,
 ) -> int:
-    """Publish a CRITICAL-severity event. Shorthand for ``event(..., severity=EventSeverity.CRITICAL)``.
+    """Publish a CRITICAL-severity event.
 
-    Returns:
-        Sequence number for this source. See :func:`event` for full parameter docs.
+    Shorthand for ``event(..., severity=EventSeverity.CRITICAL)``.
+    See :func:`event` for full parameter documentation.
     """
     return event(source_id, event_type, message, EventSeverity.CRITICAL,
                  start_ns=start_ns, end_ns=end_ns, source_type=source_type, kind=kind,
@@ -195,23 +195,27 @@ def span(
 ) -> Span:
     """Return a :class:`Span` context manager that publishes a timed event on exit.
 
-    ``trace_id`` and ``span_id`` are auto-generated. The span's ``trace_id`` and
-    ``span_id`` are accessible inside the ``with`` block so they can be passed to
-    child spans.
+    Trace context is wired automatically — nested spans inherit ``trace_id`` and
+    ``parent_id`` from the enclosing span with no manual bookkeeping. Pass
+    ``trace_id`` / ``parent_id`` explicitly only when linking across thread or
+    process boundaries.
+
+    For components that emit many spans, prefer :func:`get_tracer` to avoid
+    repeating ``source_id`` at every call site.
 
     Example::
 
-        with setaur.span("nav", "navigate_to_waypoint", "Go to wp-1") as s:
-            s.set_attr("waypoint_id", "wp-42")
-            do_work()
-        # publishes one event with start_ns, end_ns, trace_id, span_id filled in
+        # Simple span
+        with setaur.span("nav", "path_planning", "Plan route to dock") as s:
+            s.set_attr("goal", "charging_dock")
+            do_planning()
 
-        # nested spans share a trace:
-        with setaur.span("nav", "outer_op", "Outer") as parent:
-            with setaur.span("nav", "inner_op", "Inner",
-                             trace_id=parent.trace_id,
-                             parent_id=parent.span_id):
-                do_inner_work()
+        # Nested spans — trace context flows automatically
+        with setaur.span("nav", "mission_leg", "Execute leg"):
+            with setaur.span("drive", "waypoint_exec", "Drive to wp-1"):
+                do_drive()
+                # this event is also linked to the active trace automatically
+                setaur.error("drive", "waypoint_failed", "Missed wp-1")
 
     Args:
         source_id: Component emitting the span (e.g. ``"navigation_controller"``).
@@ -220,8 +224,8 @@ def span(
         severity: Defaults to ``INFO``.
         source_type: Origin of the event. Defaults to ``EventSourceType.USER``.
         kind: Operation kind hint — use ``SpanKind.ACTUATOR``, ``SENSOR``, etc.
-        trace_id: Pass a parent span's ``trace_id`` to group spans into one trace.
-        parent_id: Pass a parent span's ``span_id`` to establish a causal link.
+        trace_id: Override the inherited trace ID (cross-thread / cross-process only).
+        parent_id: Override the inherited parent span ID (cross-thread / cross-process only).
         data: Arbitrary CBOR-serializable payload attached to the span event.
 
     Returns:
@@ -235,9 +239,56 @@ def span(
     )
 
 
+def get_tracer(source_id: str) -> Tracer:
+    """Return a :class:`Tracer` scoped to ``source_id``.
+
+    A tracer binds a ``source_id`` once so you don't repeat it on every span
+    or event call. All spans and events emitted through a tracer participate in
+    automatic trace context propagation identically to :func:`span` and
+    :func:`event`.
+
+    Example::
+
+        nav   = setaur.get_tracer("nav")
+        drive = setaur.get_tracer("drive_controller")
+
+        with nav.span("mission_leg", "Execute leg"):
+            with drive.span("waypoint_exec", "Drive to wp-1"):
+                do_drive()
+                drive.error("waypoint_failed", "Missed wp-1")
+                # trace_id and parent_id inherited automatically
+
+    Args:
+        source_id: Identifier for the component (e.g. ``"navigation_controller"``).
+
+    Returns:
+        A :class:`Tracer` bound to ``source_id``.
+
+    Raises:
+        RuntimeError: If ``setaur.init()`` has not been called.
+    """
+    return Tracer(get_client(), source_id)
+
+
+def get_active_trace_id() -> str | None:
+    """Return the trace ID of the currently active span, or ``None``.
+
+    Useful for correlating structured log lines with the active trace without
+    importing :func:`get_active_span` and handling the ``None`` check yourself::
+
+        logger.info("planning route", extra={"trace_id": setaur.get_active_trace_id()})
+
+    Returns:
+        A 32-char hex trace ID string, or ``None`` if called outside a span context.
+    """
+    span = get_active_span()
+    return span.trace_id if span is not None else None
+
+
 __all__ = [
-    "SourceType", "EventSourceType", "EventSeverity", "SpanKind", "Span",
-    "init", "sensor", "event",
+    "SourceType", "EventSourceType", "EventSeverity", "SpanKind", "Span", "Tracer",
+    "init", "shutdown", "flush", "get_client", "get_tracer", "get_active_span", "get_active_trace_id",
+    "sensor", "event",
     "info", "warning", "error", "critical",
     "span",
 ]
