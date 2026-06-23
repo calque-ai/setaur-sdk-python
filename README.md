@@ -28,7 +28,7 @@ Sign up at **[setaur.ai](https://setaur.ai)**.
 
 In the Setaur platform, add a robot. This generates a unique **robot key** (`rbt-…`) and a **credentials file** (`.creds`) that the SDK uses to authenticate with setaur-edge.
 
-Download both from the add/edit robot configuration page — you'll need them in the steps below.
+Download both from the add/edit robot configuration page, you'll need them in the steps below.
 
 ### 3. Install and run setaur-edge on the robot
 
