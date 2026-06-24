@@ -1,6 +1,6 @@
 # setaur-sdk-python
 
-Python SDK for publishing telemetry from a robot to the **setaur-edge** agent. Send sensor readings, structured events, and distributed traces with a single import.
+Python SDK for publishing telemetry from a robot to the **setaur-edge** service. Send sensor readings, structured events, and distributed traces with a single import.
 
 ---
 
@@ -14,7 +14,7 @@ Setaur is a telemetry SDK for robotics. It gives every component on your robot a
 | **Event**  | Sparse, discrete occurrences (state changes, faults, commands)              | `setaur.info()` / `setaur.error()` / …  |
 | **Span**   | Timed operations with a start, end, and duration (path planning, arm moves) | `setaur.span()` / `setaur.get_tracer()` |
 
-All three are published to a local **setaur-edge** agent, which forwards them to the Setaur platform.
+All three are sent to the local **setaur-edge** service, which forwards them to the Setaur platform.
 
 ---
 
@@ -32,7 +32,7 @@ Download both from the add/edit robot configuration page, you'll need them in th
 
 ### 3. Install and run setaur-edge on the robot
 
-**setaur-edge** is the local agent that receives telemetry from the SDK and forwards it to the Setaur platform. Download it from the add/edit robot configuration page in the Setaur platform.
+**setaur-edge** is the local service that receives telemetry from the SDK and forwards it to the Setaur platform. Download it from the add/edit robot configuration page in the Setaur platform.
 
 Run it on the same machine as your robot code before calling `setaur.init()`:
 
