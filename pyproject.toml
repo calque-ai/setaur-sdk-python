@@ -1,6 +1,6 @@
 [project]
 name = "setaur"
-version = "0.1.0"
+version = "0.1.1"
 description = "Robotics telemetry SDK — publish sensor streams, structured events, and distributed traces to the Setaur observability platform"
 readme = "README.md"
 license = "Apache-2.0"
