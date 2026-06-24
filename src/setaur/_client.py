@@ -16,9 +16,10 @@ log = logging.getLogger(__name__)
 
 _instance: "_Client | None" = None
 
-_QUEUE_MAX = 2048
-_NATS_URL  = "nats://localhost:4222"
-_CREDS_ENV = "SETAUR_CREDS_FILE"
+_QUEUE_MAX    = 2048
+_NATS_DEFAULT = "nats://localhost:4222"
+_NATS_URL_ENV = "SETAUR_NATS_URL"
+_CREDS_ENV    = "SETAUR_CREDS_FILE"
 _ROBOT_KEY_RE  = re.compile(r'^rbt-[a-z0-9]+$')
 _LABEL_RE      = re.compile(r'^[a-zA-Z0-9_-]+$')
 
@@ -59,6 +60,7 @@ class _Client:
         self,
         robot_key: str,
         creds_file: str | None,
+        url: str | None = None,
         connector: NatsConnector = _default_connector,
     ):
         _validate_robot_key(robot_key)
@@ -69,6 +71,7 @@ class _Client:
 
         self._robot_key = robot_key
         self._creds     = creds
+        self._url       = url or os.environ.get(_NATS_URL_ENV) or _NATS_DEFAULT
         self._connector = connector
         self._envelope  = EnvelopeBuilder()
         self._subjects: dict[str, str] = {}
@@ -81,7 +84,7 @@ class _Client:
         self._thread.start()
 
         if not self._ready.wait(timeout=10):
-            msg = str(self._error) if self._error else f"timed out connecting to {_NATS_URL}"
+            msg = str(self._error) if self._error else f"timed out connecting to {self._url}"
             raise RuntimeError(f"setaur: {msg}")
 
         if self._error:
@@ -97,7 +100,7 @@ class _Client:
             self._ready.set()
 
     async def _connect(self) -> None:
-        self._nc = await self._connector(_NATS_URL, self._creds)
+        self._nc = await self._connector(self._url, self._creds)
         self._ready.set()
 
     async def _drain(self) -> None:
@@ -226,7 +229,7 @@ class _Client:
             log.warning("setaur: background thread did not stop cleanly within timeout")
 
 
-def init(robot_key: str, creds_file: str | None = None) -> "_Client":
+def init(robot_key: str, creds_file: str | None = None, url: str | None = None) -> "_Client":
     """Connect to setaur-edge and return the active client.
 
     Blocks until the connection is established or raises on failure.
@@ -236,6 +239,8 @@ def init(robot_key: str, creds_file: str | None = None) -> "_Client":
         robot_key: Your robot's unique key (e.g. ``"rbt-nkjttwwvw4z7"``).
         creds_file: Path to the NATS credentials file. Falls back to the
             ``SETAUR_CREDS_FILE`` environment variable when omitted.
+        url: NATS server URL. Falls back to the ``SETAUR_NATS_URL`` environment
+            variable, then ``"nats://localhost:4222"``.
 
     Returns:
         The connected :class:`_Client`. Store it if you need direct access;
@@ -246,7 +251,7 @@ def init(robot_key: str, creds_file: str | None = None) -> "_Client":
     if _instance is not None:
         log.warning("setaur: init() called while a client is already running; replacing it")
         _instance.close()
-    _instance = _Client(robot_key, creds_file)
+    _instance = _Client(robot_key, creds_file, url)
     return _instance
 
 
