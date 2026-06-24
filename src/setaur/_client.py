@@ -36,7 +36,7 @@ class NatsConnector(Protocol):
 async def _default_connector(url: str, credentials: str | None) -> NatsClient:
     opts: dict = {"servers": [url]}
     if credentials:
-        opts["credentials"] = credentials
+        opts["user_credentials"] = credentials
     return await nats.connect(**opts)
 
 

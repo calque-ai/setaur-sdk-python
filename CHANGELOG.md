@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-06-24
+
+- Fix: NATS credentials key corrected from `credentials` to `user_credentials` in connector options.
+- Fix: Added `nkeys` extra to `nats-py` dependency so NATS credentials auth works without a manual install step.
+
 ## [0.1.1] - 2026-06-24
 
 - `setaur.init()` now accepts an optional `url` parameter to set the NATS server address. Falls back to the `SETAUR_NATS_URL` environment variable, then `nats://localhost:4222`.

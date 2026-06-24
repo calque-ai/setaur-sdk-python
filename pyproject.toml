@@ -1,6 +1,6 @@
 [project]
 name = "setaur"
-version = "0.1.1"
+version = "0.1.2"
 description = "Robotics telemetry SDK — publish sensor streams, structured events, and distributed traces to the Setaur observability platform"
 readme = "README.md"
 license = "Apache-2.0"
@@ -22,7 +22,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
     "cbor2>=6.1.2",
-    "nats-py>=2.15.0",
+    "nats-py[nkeys]>=2.15.0",
 ]
 
 [project.urls]
