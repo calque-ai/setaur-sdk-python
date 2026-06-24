@@ -3,7 +3,8 @@ name = "setaur"
 version = "0.1.0"
 description = "Robotics telemetry SDK — publish sensor streams, structured events, and distributed traces to the Setaur observability platform"
 readme = "README.md"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [
     { name = "Noah Shibley", email = "noah@calque.ai" }
 ]
@@ -11,7 +12,6 @@ keywords = ["robotics", "telemetry", "observability", "tracing", "distributed-tr
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -32,7 +32,7 @@ Repository = "https://github.com/calque-ai/setaur-sdk-python"
 "Bug Tracker" = "https://github.com/calque-ai/setaur-sdk-python/issues"
 
 [build-system]
-requires = ["uv_build>=0.11.21"]
+requires = ["uv_build>=0.11.21, <0.12.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
