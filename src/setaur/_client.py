@@ -21,7 +21,8 @@ _NATS_DEFAULT = "nats://localhost:4222"
 _NATS_URL_ENV = "SETAUR_NATS_URL"
 _CREDS_ENV    = "SETAUR_CREDS_FILE"
 _ROBOT_KEY_RE  = re.compile(r'^rbt-[a-z0-9]+$')
-_LABEL_RE      = re.compile(r'^[a-zA-Z0-9_-]+$')
+_LABEL_CHARS   = r'a-zA-Z0-9_-'
+_LABEL_RE      = re.compile(rf'^[{_LABEL_CHARS}]+$')
 
 
 class NatsClient(Protocol):
@@ -197,6 +198,38 @@ class _Client:
             ) from exc
         self._publish(subject, payload, source_id)
         return envelope['sequence_num']
+
+    def log_record(
+        self,
+        component: str,
+        timestamp_ns: int,
+        severity_text: str,
+        logger_name: str,
+        message: str,
+        *,
+        firmware_version: str | None = None,
+        source_file: str | None = None,
+        source_line: int | None = None,
+        source_function: str | None = None,
+        trace_id: str | None = None,
+        span_id: str | None = None,
+        attrs: dict[str, Any] | None = None,
+    ) -> None:
+        subject = f"logs.{self._robot_key}.{component}"
+        envelope = self._envelope.log(
+            component, timestamp_ns, severity_text, logger_name, message,
+            firmware_version=firmware_version,
+            source_file=source_file, source_line=source_line,
+            source_function=source_function,
+            trace_id=trace_id, span_id=span_id, attrs=attrs,
+        )
+        try:
+            payload = cbor2.dumps(envelope)
+        except Exception as exc:
+            raise TypeError(
+                f"setaur: log attrs for '{component}' are not CBOR-serializable: {exc}"
+            ) from exc
+        self._publish(subject, payload, component)
 
     def flush(self, timeout: float = 5.0) -> bool:
         """Block until the publish queue is empty or *timeout* seconds elapse.

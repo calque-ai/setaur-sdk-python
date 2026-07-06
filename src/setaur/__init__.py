@@ -2,6 +2,7 @@ from typing import Any
 from ._types import SourceType, EventSourceType, EventSeverity, SpanKind
 from ._client import init, get_client, shutdown, flush
 from ._span import Span, Tracer, get_active_span
+from ._log_handler import SetaurLogHandler, install_logging_handler, set_log_context, clear_log_context
 
 
 def sensor(
@@ -291,4 +292,5 @@ __all__ = [
     "sensor", "event",
     "info", "warning", "error", "critical",
     "span",
+    "SetaurLogHandler", "install_logging_handler", "set_log_context", "clear_log_context",
 ]
