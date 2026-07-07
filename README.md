@@ -8,11 +8,12 @@ Python SDK for publishing telemetry from a robot to the **setaur-edge** service.
 
 Setaur is a telemetry SDK for robotics. It gives every component on your robot a consistent way to emit three kinds of data:
 
-| Kind       | Use for                                                                     | API                                     |
-| ---------- | --------------------------------------------------------------------------- | --------------------------------------- |
-| **Sensor** | High-rate, continuous measurements (IMU, lidar, encoders)                   | `setaur.sensor()`                       |
-| **Event**  | Sparse, discrete occurrences (state changes, faults, commands)              | `setaur.info()` / `setaur.error()` / …  |
-| **Span**   | Timed operations with a start, end, and duration (path planning, arm moves) | `setaur.span()` / `setaur.get_tracer()` |
+| Kind       | Use for                                                                     | API                                          |
+| ---------- | --------------------------------------------------------------------------- | -------------------------------------------- |
+| **Sensor** | High-rate, continuous measurements (IMU, lidar, encoders)                   | `setaur.sensor()`                            |
+| **Event**  | Sparse, discrete occurrences (state changes, faults, commands)              | `setaur.info()` / `setaur.error()` / ...     |
+| **Span**   | Timed operations with a start, end, and duration (path planning, arm moves) | `setaur.span()` / `setaur.get_tracer()`      |
+| **Log**    | Structured log output from the standard `logging` module                    | `setaur.install_logging_handler()`           |
 
 All three are sent to the local **setaur-edge** service, which forwards them to the Setaur platform.
 
@@ -278,6 +279,93 @@ Tracers are lightweight handles, create them at module level and reuse freely. T
 
 ---
 
+## Logs
+
+Wire the standard `logging` module into setaur with one call. Every log record is forwarded to setaur-edge as a structured `LogMessage` with source location, severity, and optional trace context captured automatically.
+
+### Setup
+
+```python
+import logging
+import setaur
+
+setaur.init("rbt-yourrobotkey")
+setaur.install_logging_handler()
+
+log = logging.getLogger(__name__)
+log.warning("joint limit approaching")   # forwarded to setaur-edge automatically
+```
+
+### Log context
+
+Set process-global fields that are injected into every log record. Call this once at startup, after `init()`.
+
+`firmware_version` and `component` are top-level `LogMessage` fields. All other keys are forwarded as `attrs`.
+
+```python
+setaur.set_log_context(
+    firmware_version = "1.4.2",
+    component        = "nav",      # pins the NATS subject component for all logs
+    mission_id       = "m-0042",   # forwarded as attrs["mission_id"]
+)
+```
+
+`component` must contain only letters, digits, hyphens, and underscores. Without it, the component is derived from each logger's name (`"myapp.nav"` becomes `"myapp_nav"`).
+
+To reset all context fields:
+
+```python
+setaur.clear_log_context()
+```
+
+### Severity mapping
+
+Python log levels map to OTel `severity_text` values in the envelope:
+
+| Python level | `severity_text` |
+| ------------ | --------------- |
+| `DEBUG`      | `DEBUG`         |
+| `INFO`       | `INFO`          |
+| `WARNING`    | `WARN`          |
+| `ERROR`      | `ERROR`         |
+| `CRITICAL`   | `FATAL`         |
+
+### Exception capture
+
+`logger.exception()` captures `exc_info` automatically into `attrs["exception"]`:
+
+```python
+try:
+    raise RuntimeError("IK solver did not converge")
+except RuntimeError:
+    log.exception("Inverse kinematics failure")
+# attrs["exception"] = "RuntimeError: IK solver did not converge"
+```
+
+### Trace correlation
+
+Log records emitted inside a span automatically inherit `trace_id` and `span_id` with no extra code:
+
+```python
+with setaur.span("nav", "dock_approach", "Approach charging dock"):
+    log.info("Aligning with dock")   # trace_id and span_id injected automatically
+    log.info("Docking complete")
+```
+
+### Multiple loggers
+
+`install_logging_handler()` attaches to the root logger by default, so all loggers in the process are captured. To limit capture to a specific logger:
+
+```python
+setaur.install_logging_handler(
+    logger    = logging.getLogger("myapp"),
+    level     = logging.WARNING,   # only WARNING and above
+    component = "myapp",           # pin component for this handler
+)
+```
+
+---
+
 ## Log correlation
 
 Get the current trace ID for attaching to structured log lines:
@@ -330,6 +418,14 @@ with setaur.span("nav", "planning", "Plan route"):
 | `setaur.get_active_span() -> Span \| None`                                   | Return the innermost active span for this thread/task. |
 | `setaur.get_active_trace_id() -> str \| None`                                | Return the current trace ID, or `None` outside a span. |
 
+### Logs
+
+| Function                                                              | Description                                                        |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `setaur.install_logging_handler(*, level, logger, component)`         | Attach a handler to a logger (default: root). Returns the handler. |
+| `setaur.set_log_context(**kwargs)`                                    | Set process-global fields injected into every log record.          |
+| `setaur.clear_log_context()`                                          | Remove all log context fields.                                     |
+
 ### Return values
 
 Every publish call returns a **sequence number** a monotonically increasing integer per `source_id`. A gap in sequence numbers on the receiving side means at least one message was dropped by the publish queue.
@@ -342,6 +438,7 @@ Full working examples are in the [`examples/`](examples/) directory:
 
 | File                                                  | Demonstrates                                        |
 | ----------------------------------------------------- | --------------------------------------------------- |
-| [`sensor_example.py`](examples/sensor_example.py)     | IMU at 100 Hz with accurate hardware timestamps     |
-| [`event_example.py`](examples/event_example.py)       | All four severity levels with structured attrs      |
-| [`advanced_example.py`](examples/advanced_example.py) | Nested spans, automatic trace propagation, `Tracer` |
+| [`sensor_example.py`](examples/sensor_example.py)     | IMU at 100 Hz with accurate hardware timestamps                      |
+| [`event_example.py`](examples/event_example.py)       | All four severity levels with structured attrs                       |
+| [`advanced_example.py`](examples/advanced_example.py) | Nested spans, automatic trace propagation, `Tracer`                  |
+| [`log_example.py`](examples/log_example.py)           | Log context, all severity levels, exception capture, trace-linked logs |
