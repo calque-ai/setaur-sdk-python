@@ -135,11 +135,10 @@ seq = setaur.sensor(
 
 **Source types**
 
-| Value                      | Meaning                               |
-| -------------------------- | ------------------------------------- |
-| `SourceType.SENSOR`        | Physical sensor (IMU, lidar, camera)  |
-| `SourceType.STATE_MACHINE` | State machine or planner output       |
-| `SourceType.METADATA`      | Configuration or descriptive metadata |
+| Value                 | Meaning                               |
+| --------------------- | ------------------------------------- |
+| `SourceType.SENSOR`   | Physical sensor (IMU, lidar, camera)  |
+| `SourceType.METADATA` | Configuration or descriptive metadata |
 
 ---
 
@@ -178,6 +177,35 @@ setaur.event(
 ```
 
 `event_type` is a machine-readable label used for filtering and aggregation (e.g. `"motor_fault"`). `message` is the human-readable description shown in the UI.
+
+### State machine events
+
+Use `EventSourceType.STATE_MACHINE` to feed the **state machine timeline** visualizer in the Setaur platform. Each event represents a state transition; the platform renders a Gantt-style bar chart showing how long the system occupied each state.
+
+Set `event_type` to the **new state name** — the platform uses this as the bar label. The bar for each state spans from the transition timestamp to the next transition.
+
+```python
+from setaur import EventSourceType
+
+setaur.event(
+    'navigation_state_machine', 'IDLE',
+    'Navigation state: MOVING → IDLE',
+    setaur.EventSeverity.INFO,
+    source_type = EventSourceType.STATE_MACHINE,
+    attrs       = {'previous_state': 'MOVING'},
+)
+```
+
+State machine events also appear in the standard event timeline alongside all other events.
+
+**Event source types**
+
+| Value                           | Meaning                                                         |
+| ------------------------------- | --------------------------------------------------------------- |
+| `EventSourceType.USER`          | Default — application logic, commands, business events          |
+| `EventSourceType.STATE_MACHINE` | State transition — drives the state machine timeline visualizer |
+| `EventSourceType.PLATFORM`      | Platform-generated events                                       |
+| `EventSourceType.SYSTEM`        | Low-level system events                                         |
 
 **Severity levels**
 

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-07-13
+
+### Changed
+
+- Documented `EventSourceType.STATE_MACHINE` — use this source type to feed the state machine timeline visualizer in the Setaur platform. Events appear in both the state timeline (Gantt-style bar chart) and the standard event timeline.
+- Fixed README: removed `SourceType.STATE_MACHINE` from the sensor source types table; this value only exists on `EventSourceType`, not `SourceType`.
+
 ## [0.2.0] - 2026-07-06
 
 ### Added
