@@ -2,13 +2,13 @@ from enum import StrEnum
 
 class SourceType(StrEnum):
     SENSOR        = "sensor"
-    STATE_MACHINE = "state_machine"
     METADATA      = "metadata"
 
 class EventSourceType(StrEnum):
     USER     = "user"
     PLATFORM = "platform"
     SYSTEM   = "system"
+    STATE_MACHINE = "state_machine"
 
 class EventSeverity(StrEnum):
     INFO     = "info"
