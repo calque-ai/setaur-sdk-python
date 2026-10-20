@@ -8,6 +8,7 @@ from typing import Any, Protocol
 import cbor2
 import nats
 
+from ._creds import check_creds_file
 from ._envelope import EnvelopeBuilder
 from ._span_context import get_active_span
 from ._types import SourceType, EventSourceType, EventSeverity, SpanKind
@@ -69,6 +70,8 @@ class _Client:
         creds = creds_file or os.environ.get(_CREDS_ENV)
         if creds and not os.path.isfile(creds):
             raise FileNotFoundError(f"setaur: credentials file not found: {creds}")
+        if creds:
+            check_creds_file(creds)
 
         self._robot_key = robot_key
         self._creds     = creds

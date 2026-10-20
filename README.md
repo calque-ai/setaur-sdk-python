@@ -108,6 +108,8 @@ The `SETAUR_CREDS_FILE` environment variable is the recommended way to supply cr
 SETAUR_CREDS_FILE=/etc/robot/robot.creds python my_robot.py
 ```
 
+The platform provides two credentials files. The SDK needs `<robotKey>-nats.creds`. The `<robotKey>-cloud.creds` file is for setaur-edge's connection to the cloud; `setaur.init()` raises a `ValueError` naming the file if you pass it, and also if the credentials in `-nats.creds` have expired.
+
 ---
 
 ## Sensors

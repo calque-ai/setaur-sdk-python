@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `setaur.init()` now validates the credentials file before connecting. Passing the edge-to-cloud file (`<robotKey>-cloud.creds`) raises a `ValueError` that names the file and points to `<robotKey>-nats.creds`; a file with no credentials, or credentials past their expiry, is also rejected with a clear message instead of an opaque NATS auth error.
+
 ## [0.2.1] - 2026-07-13
 
 ### Changed
