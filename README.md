@@ -95,6 +95,10 @@ client = setaur.init("rbt-yourrobotkey")
 # Falls back to the SETAUR_CREDS_FILE environment variable when omitted.
 setaur.init("rbt-yourrobotkey", creds_file="/etc/robot/robot.creds")
 
+# Optional: connect to a setaur-edge that is not on localhost:4222.
+# Falls back to the SETAUR_NATS_URL environment variable when omitted.
+setaur.init("rbt-yourrobotkey", url="nats://192.168.1.50:5222")
+
 # At process exit, flush all queued messages then close the connection.
 setaur.shutdown()
 
@@ -106,6 +110,12 @@ The `SETAUR_CREDS_FILE` environment variable is the recommended way to supply cr
 
 ```bash
 SETAUR_CREDS_FILE=/etc/robot/robot.creds python my_robot.py
+```
+
+The server address works the same way: pass `url` to `init()` or set `SETAUR_NATS_URL`. The default is `nats://localhost:4222`. To change only the port, put it in the URL (`nats://localhost:5222`); a URL without a port uses 4222.
+
+```bash
+SETAUR_NATS_URL=nats://192.168.1.50:5222 python my_robot.py
 ```
 
 The platform provides two credentials files. The SDK needs `<robotKey>-nats.creds`. The `<robotKey>-cloud.creds` file is for setaur-edge's connection to the cloud; `setaur.init()` raises a `ValueError` naming the file if you pass it, and also if the credentials in `-nats.creds` have expired.
@@ -419,7 +429,7 @@ with setaur.span("nav", "planning", "Plan route"):
 
 | Function                                                | Description                                                         |
 | ------------------------------------------------------- | ------------------------------------------------------------------- |
-| `setaur.init(robot_key, *, creds_file=None) -> _Client` | Connect to setaur-edge. Blocks until connected.                     |
+| `setaur.init(robot_key, creds_file=None, url=None) -> _Client` | Connect to setaur-edge. Blocks until connected.                     |
 | `setaur.shutdown(timeout=5.0)`                          | Flush queued messages then close the connection.                    |
 | `setaur.flush(timeout=5.0) -> bool`                     | Drain the queue without closing. Returns `True` if drained in time. |
 

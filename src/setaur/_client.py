@@ -102,23 +102,27 @@ class _Client:
         except Exception as exc:
             self._error = exc
             self._ready.set()
+        finally:
+            self._loop.close()
 
     async def _connect(self) -> None:
         self._nc = await self._connector(self._url, self._creds)
         self._ready.set()
 
     async def _drain(self) -> None:
-        while True:
+        stopping = False
+        while not stopping:
             item = await self._q.get()      # yield until at least one item arrives
-            if item is None:
-                break
-            while item is not None:         # batch: consume all already-queued items
+            while True:                     # batch: consume all already-queued items
+                if item is None:            # sentinel may arrive mid-batch; it must end the outer loop too
+                    stopping = True
+                    break
                 subject, payload = item
                 await self._nc.publish(subject, payload)
                 try:
                     item = self._q.get_nowait()
                 except asyncio.QueueEmpty:
-                    item = None
+                    break
         await self._nc.close()
 
     def _publish(self, subject: str, payload: bytes, source_id: str) -> None:
@@ -128,7 +132,10 @@ class _Client:
                 self._q.put_nowait(item)
             except asyncio.QueueFull:
                 log.warning("setaur: publish queue full, dropping message for %s", source_id)
-        self._loop.call_soon_threadsafe(_enqueue)
+        try:
+            self._loop.call_soon_threadsafe(_enqueue)
+        except RuntimeError:    # loop closed: client already shut down
+            log.debug("setaur: client is closed, dropping message for %s", source_id)
 
     def sensor(
         self,
@@ -240,6 +247,9 @@ class _Client:
         Returns True if the queue drained within the timeout, False otherwise.
         The client remains running after this call.
         """
+        if not self._thread.is_alive():
+            return False
+
         done = threading.Event()
 
         def _signal():
@@ -259,7 +269,9 @@ class _Client:
         return flushed
 
     def close(self) -> None:
-        self._loop.call_soon_threadsafe(self._q.put_nowait, None)
+        if not self._thread.is_alive():
+            return
+        asyncio.run_coroutine_threadsafe(self._q.put(None), self._loop)    # put, not put_nowait: the queue may be full
         self._thread.join(timeout=5)
         if self._thread.is_alive():
             log.warning("setaur: background thread did not stop cleanly within timeout")

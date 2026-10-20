@@ -39,9 +39,9 @@ def test_sequence_is_independent_per_source():
 
 def test_source_type_serializes_as_string():
     builder = EnvelopeBuilder()
-    env = builder.sensor('sm.navigation', SourceType.STATE_MACHINE, TS, {})
+    env = builder.sensor('imu_0', SourceType.METADATA, TS, {})
 
-    assert env['source_type'] == 'state_machine'
+    assert env['source_type'] == 'metadata'
     assert isinstance(env['source_type'], str)
 
 def test_data_is_passed_through_unchanged():

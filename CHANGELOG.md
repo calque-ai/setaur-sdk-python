@@ -2,11 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-20
 
 ### Added
 
 - `setaur.init()` now validates the credentials file before connecting. Passing the edge-to-cloud file (`<robotKey>-cloud.creds`) raises a `ValueError` that names the file and points to `<robotKey>-nats.creds`; a file with no credentials, or credentials past their expiry, is also rejected with a clear message instead of an opaque NATS auth error.
+
+### Changed
+
+- Documented the `url` parameter of `setaur.init()` and the `SETAUR_NATS_URL` environment variable in the README, including how to change only the port.
+
+### Fixed
+
+- Shutdown could hang: if a message and the shutdown signal were both queued while a publish was in flight, the signal was consumed as a message. `close()` then waited out its 5-second timeout and the NATS connection was never closed.
+- `close()` and `shutdown()` after a burst that filled the publish queue always timed out, because the shutdown signal could not be queued on a full queue. It now waits for space.
+- `close()` called a second time is now a no-op.
+- The client's event loop is now closed when its background thread exits, instead of leaking the loop and its sockets on every `init()`/`shutdown()` cycle. Publishing or flushing on an already-closed client drops the message (and `flush()` returns `False`) instead of raising.
 
 ## [0.2.1] - 2026-07-13
 

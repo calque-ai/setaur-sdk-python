@@ -2,7 +2,7 @@ import asyncio
 import time
 import cbor2
 import pytest
-from setaur._client import _Client, _NATS_URL
+from setaur._client import _Client
 from setaur._types import SourceType
 
 
@@ -60,6 +60,54 @@ def test_invalid_robot_key_raises_before_connecting():
 def test_missing_creds_file_raises_before_connecting(tmp_path):
     with pytest.raises(FileNotFoundError, match="credentials file not found"):
         _Client("rbt-test000001", creds_file=str(tmp_path / "missing.creds"), connector=make_connector(FakeNatsClient()))
+
+
+def test_close_after_queued_messages_stops_the_drain_loop():
+    class SlowFirstPublish(FakeNatsClient):
+        async def publish(self, subject: str, payload: bytes) -> None:
+            if not self.published:
+                await asyncio.sleep(0.1)    # lets the next messages and the sentinel queue up behind this one
+            await super().publish(subject, payload)
+
+    nc = SlowFirstPublish()
+    client = _Client("rbt-test000001", creds_file=None, connector=make_connector(nc))
+    client.sensor("imu_0", SourceType.SENSOR, 1_000_000_000, {"x": 1.0})
+    client.sensor("imu_0", SourceType.SENSOR, 2_000_000_000, {"x": 2.0})
+
+    start = time.monotonic()
+    client.close()
+
+    assert time.monotonic() - start < 2
+    assert not client._thread.is_alive()
+    assert len(nc.published) == 2
+    assert nc.closed
+
+
+def test_close_twice_is_a_noop():
+    client, nc = make_client()
+    client.close()
+    client.close()
+
+    assert nc.closed
+
+
+def test_close_releases_the_event_loop():
+    client, _ = make_client()
+    client.close()
+
+    assert client._loop.is_closed()
+
+
+def test_publish_and_flush_after_close_do_not_raise():
+    client, nc = make_client()
+    client.close()
+
+    client.sensor("imu_0", SourceType.SENSOR, 1_000_000_000, {"x": 1.0})
+    start = time.monotonic()
+
+    assert client.flush(timeout=5.0) is False
+    assert time.monotonic() - start < 1
+    assert nc.published == []
 
 
 # --- sensor publishing -------------------------------------------------------
@@ -130,10 +178,14 @@ def test_subject_cached_after_first_call():
 
 def test_full_queue_drops_and_logs_warning(caplog):
     import logging
+    import threading
+
+    release = threading.Event()
 
     class BlockingNatsClient(FakeNatsClient):
         async def publish(self, subject, payload):
-            await asyncio.sleep(60)  # hold the drain loop so the queue fills
+            while not release.is_set():  # hold the drain loop so the queue fills
+                await asyncio.sleep(0.01)
 
     client, _ = make_client(fake_nc=BlockingNatsClient())
 
@@ -144,7 +196,12 @@ def test_full_queue_drops_and_logs_warning(caplog):
         time.sleep(0.05)  # let the event loop process the enqueue callbacks
 
     assert any("publish queue full" in r.message for r in caplog.records)
+    release.set()
+    start = time.monotonic()
     client.close()
+
+    assert time.monotonic() - start < 2
+    assert not client._thread.is_alive()
 
 
 # --- close -------------------------------------------------------------------
